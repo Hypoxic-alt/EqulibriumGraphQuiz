@@ -27,11 +27,10 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
       - Phase 2: t = 200 to 400 (after perturbation 1)
       - Phase 3: t = 400 to 600 (after perturbation 2)
       
-    Depending on the perturbation, update rate constants (for temperature changes)
-    or modify concentrations (for volume/pressure or addition changes). For addition,
-    the provided add_index indicates which species is affected.
+    The perturbations adjust rate constants (temperature) or modify concentrations (volume/pressure or addition).
+    For addition, the provided add_index indicates which species is affected.
     """
-    # Base rate constants
+    # Base rate constants.
     k1_base = 0.02
     k2_base = 0.01
     current_k1 = k1_base
@@ -44,10 +43,10 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 
     # Initial conditions: assume [A]=1.0, [B]=1.0, [C]=0, [D]=0.
     init = np.array([1.0, 1.0, 0.0, 0.0])
-    a, b, c, d = scenario["a"], scenario["b"], scenario["c"], scenario["d"]
+    a_coef, b_coef, c_coef, d_coef = scenario["a"], scenario["b"], scenario["c"], scenario["d"]
 
     # --- Phase 1 ---
-    sol1 = odeint(generic_reaction, init, t1, args=(current_k1, current_k2, a, b, c, d))
+    sol1 = odeint(generic_reaction, init, t1, args=(current_k1, current_k2, a_coef, b_coef, c_coef, d_coef))
 
     # --- Apply Perturbation 1 at t = 200 ---
     if "Temperature" in pert1:
@@ -76,7 +75,7 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
         init2 = sol1[-1]
 
     # --- Phase 2 ---
-    sol2 = odeint(generic_reaction, init2, t2, args=(current_k1, current_k2, a, b, c, d))
+    sol2 = odeint(generic_reaction, init2, t2, args=(current_k1, current_k2, a_coef, b_coef, c_coef, d_coef))
 
     # --- Apply Perturbation 2 at t = 400 ---
     if "Temperature" in pert2:
@@ -103,38 +102,37 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
         init3 = sol2[-1]
 
     # --- Phase 3 ---
-    sol3 = odeint(generic_reaction, init3, t3, args=(current_k1, current_k2, a, b, c, d))
+    sol3 = odeint(generic_reaction, init3, t3, args=(current_k1, current_k2, a_coef, b_coef, c_coef, d_coef))
 
     # --- Plotting ---
     fig, ax = plt.subplots(figsize=(10, 6))
-    # Draw each species with fixed colors:
-    if a != 0:
+    # For each species, plot its time course using fixed colors and connect the phases.
+    if a_coef != 0:
         ax.plot(t1, sol1[:, 0], color='blue')
         ax.plot(t2, sol2[:, 0], color='blue')
         ax.plot(t3, sol3[:, 0], color='blue')
-        # Connect phase 1 and 2:
+        # Connect phase endpoints vertically:
         ax.plot([t1[-1], t1[-1]], [sol1[-1, 0], sol2[0, 0]], color='blue')
-        # Connect phase 2 and 3:
         ax.plot([t2[-1], t2[-1]], [sol2[-1, 0], sol3[0, 0]], color='blue')
-    if b != 0:
+    if b_coef != 0:
         ax.plot(t1, sol1[:, 1], color='red')
         ax.plot(t2, sol2[:, 1], color='red')
         ax.plot(t3, sol3[:, 1], color='red')
         ax.plot([t1[-1], t1[-1]], [sol1[-1, 1], sol2[0, 1]], color='red')
         ax.plot([t2[-1], t2[-1]], [sol2[-1, 1], sol3[0, 1]], color='red')
-    if c != 0:
+    if c_coef != 0:
         ax.plot(t1, sol1[:, 2], color='green')
         ax.plot(t2, sol2[:, 2], color='green')
         ax.plot(t3, sol3[:, 2], color='green')
         ax.plot([t1[-1], t1[-1]], [sol1[-1, 2], sol2[0, 2]], color='green')
         ax.plot([t2[-1], t2[-1]], [sol2[-1, 2], sol3[0, 2]], color='green')
-    if d != 0:
+    if d_coef != 0:
         ax.plot(t1, sol1[:, 3], color='purple')
         ax.plot(t2, sol2[:, 3], color='purple')
         ax.plot(t3, sol3[:, 3], color='purple')
         ax.plot([t1[-1], t1[-1]], [sol1[-1, 3], sol2[0, 3]], color='purple')
         ax.plot([t2[-1], t2[-1]], [sol2[-1, 3], sol3[0, 3]], color='purple')
-        
+
     # Mark the perturbation times.
     ax.axvline(x=200, color="grey", linestyle="--")
     ax.axvline(x=400, color="grey", linestyle="--")
@@ -150,70 +148,83 @@ def generate_options(correct, scenario, vp_rep):
     Build a pool of answer options and return 4 unique options (including the correct one)
     in randomized order. The pool is based on:
       - Temperature: "Increased Temperature", "Decreased Temperature"
-      - Volume/Pressure: based on vp_rep (either Volume or Pressure)
-      - Addition: for each reactant and product in the scenario.
+      - Volume/Pressure: (based on vp_rep)
+      - Addition: For reactants and products.
+      
+    If the reaction has more than one reactant (or product) but the stoichiometric coefficients
+    are equal, only one addition option is provided for that category.
     """
     temp_opts = ["Increased Temperature", "Decreased Temperature"]
-    if vp_rep == "Volume":
-        vp_opts = ["Increased Volume", "Decreased Volume"]
-    else:
-        vp_opts = ["Increased Pressure", "Decreased Pressure"]
-    add_opts = []
+    vp_opts = ["Increased Volume", "Decreased Volume"] if vp_rep == "Volume" else ["Increased Pressure", "Decreased Pressure"]
+    
+    # Generate addition options for reactants.
+    add_opts_reactants = []
     if scenario.get("reactants"):
-        for r in scenario["reactants"]:
-            add_opts.append(f"Addition of Reactant: {r}")
+        if len(scenario["reactants"]) > 1 and scenario["a"] == scenario["b"] and scenario["a"] != 0:
+            # If both reactants are present in equal ratio, include only one option.
+            add_opts_reactants.append(f"Addition of Reactant: {scenario['reactants'][0]}")
+        else:
+            for r in scenario["reactants"]:
+                add_opts_reactants.append(f"Addition of Reactant: {r}")
+    
+    # Generate addition options for products.
+    add_opts_products = []
     if scenario.get("products"):
-        for p in scenario["products"]:
-            add_opts.append(f"Addition of Product: {p}")
-            
+        if len(scenario["products"]) > 1 and scenario["c"] == scenario["d"] and scenario["c"] != 0:
+            add_opts_products.append(f"Addition of Product: {scenario['products'][0]}")
+        else:
+            for p in scenario["products"]:
+                add_opts_products.append(f"Addition of Product: {p}")
+    
+    add_opts = add_opts_reactants + add_opts_products
+
     pool = temp_opts + vp_opts + add_opts
     if correct not in pool:
         pool.append(correct)
         
-    # Ensure that if the correct answer is temperature or volume/pressure, its counterpart is included.
+    # Ensure that if the correct answer is in a given category, its counterpart is included.
     if "Temperature" in correct:
         other_temp = [opt for opt in temp_opts if opt != correct]
         if other_temp and other_temp[0] not in pool:
             pool.append(other_temp[0])
     elif "Volume" in correct or "Pressure" in correct:
-        if vp_rep == "Volume":
-            other_vp = [opt for opt in ["Increased Volume", "Decreased Volume"] if opt != correct]
-        else:
-            other_vp = [opt for opt in ["Increased Pressure", "Decreased Pressure"] if opt != correct]
+        other_vp = [opt for opt in vp_opts if opt != correct]
         if other_vp and other_vp[0] not in pool:
             pool.append(other_vp[0])
     elif "Addition" in correct:
+        # For addition, if the reaction has equal ratio reactants/products, only one option is in add_opts.
         if "Reactant" in correct:
-            others = [opt for opt in add_opts if "Reactant" in opt and opt != correct]
+            others = [opt for opt in add_opts_reactants if opt != correct]
             if others:
                 pool.append(others[0])
         elif "Product" in correct:
-            others = [opt for opt in add_opts if "Product" in opt and opt != correct]
+            others = [opt for opt in add_opts_products if opt != correct]
             if others:
                 pool.append(others[0])
                 
     pool = list(set(pool))
     if correct not in pool:
         pool.append(correct)
-    # Choose exactly 4 unique options.
+    # Finally, choose exactly 4 options (ensuring the correct one is present)
     if len(pool) > 4:
+        # Force inclusion of the correct answer and one plausible confounder if available.
         forced = []
         if "Temperature" in correct:
             forced = [opt for opt in temp_opts if opt != correct]
         elif "Volume" in correct or "Pressure" in correct:
-            if vp_rep == "Volume":
-                forced = [opt for opt in ["Increased Volume", "Decreased Volume"] if opt != correct]
-            else:
-                forced = [opt for opt in ["Increased Pressure", "Decreased Pressure"] if opt != correct]
+            forced = [opt for opt in vp_opts if opt != correct]
         elif "Addition" in correct:
             if "Reactant" in correct:
-                forced = [opt for opt in add_opts if "Reactant" in opt and opt != correct]
+                forced = [opt for opt in add_opts_reactants if opt != correct]
             elif "Product" in correct:
-                forced = [opt for opt in add_opts if "Product" in opt and opt != correct]
-        forced = forced[:1]  # include one plausible confounder
+                forced = [opt for opt in add_opts_products if opt != correct]
+        forced = forced[:1]  # include only one forced option
         remaining = [opt for opt in pool if opt not in forced and opt != correct]
         count_needed = 4 - 1 - len(forced)
-        chosen = random.sample(remaining, count_needed) if len(remaining) >= count_needed else remaining
+        if len(remaining) >= count_needed:
+            chosen = random.sample(remaining, count_needed)
+        else:
+            chosen = remaining
         final_options = [correct] + forced + chosen
     else:
         final_options = pool
@@ -236,6 +247,7 @@ def generate_options(correct, scenario, vp_rep):
     return final_options
 
 # --------------------- Reaction Bank ---------------------
+# Four original reactions plus two additional real-world examples.
 reaction_bank = [
     {
         "name": "Haber Process",
@@ -268,6 +280,22 @@ reaction_bank = [
         "deltaH": 20,
         "reactants": ["CO", "H₂O"],
         "products": ["CO₂", "H₂"]
+    },
+    {
+        "name": "Carbon Dioxide Hydration",
+        "reaction": "CO₂ + H₂O ↔ H₂CO₃",
+        "a": 1, "b": 1, "c": 1, "d": 0,
+        "deltaH": -20,
+        "reactants": ["CO₂", "H₂O"],
+        "products": ["H₂CO₃"]
+    },
+    {
+        "name": "Nitrogen Dioxide Dimerization",
+        "reaction": "2NO₂ ↔ N₂O₄",
+        "a": 2, "b": 0, "c": 1, "d": 0,
+        "deltaH": -57,
+        "reactants": ["NO₂"],
+        "products": ["N₂O₄"]
     }
 ]
 
@@ -303,8 +331,11 @@ if "quiz_generated" not in st.session_state:
             available.append(1)
         if available:
             add_index1 = random.choice(available)
-            chem = scenario["reactants"][available.index(add_index1)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
-            pert1 = f"Addition of Reactant: {chem}"
+            # Use the appropriate reactant; if both exist but are equal in ratio, only one option is used.
+            if len(scenario["reactants"]) > 1 and scenario["a"] == scenario["b"]:
+                pert1 = f"Addition of Reactant: {scenario['reactants'][0]}"
+            else:
+                pert1 = f"Addition of Reactant: {scenario['reactants'][available.index(add_index1)]}"
         else:
             pert1 = "Addition of Reactant: Unknown"
     elif "Addition of Product" in pert1:
@@ -315,8 +346,10 @@ if "quiz_generated" not in st.session_state:
             available.append(3)
         if available:
             add_index1 = random.choice(available)
-            chem = scenario["products"][0] if add_index1 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
-            pert1 = f"Addition of Product: {chem}"
+            if len(scenario["products"]) > 1 and scenario["c"] == scenario["d"]:
+                pert1 = f"Addition of Product: {scenario['products'][0]}"
+            else:
+                pert1 = f"Addition of Product: {scenario['products'][available.index(add_index1)]}"
         else:
             pert1 = "Addition of Product: Unknown"
 
@@ -328,8 +361,10 @@ if "quiz_generated" not in st.session_state:
             available.append(1)
         if available:
             add_index2 = random.choice(available)
-            chem = scenario["reactants"][available.index(add_index2)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
-            pert2 = f"Addition of Reactant: {chem}"
+            if len(scenario["reactants"]) > 1 and scenario["a"] == scenario["b"]:
+                pert2 = f"Addition of Reactant: {scenario['reactants'][0]}"
+            else:
+                pert2 = f"Addition of Reactant: {scenario['reactants'][available.index(add_index2)]}"
         else:
             pert2 = "Addition of Reactant: Unknown"
     elif "Addition of Product" in pert2:
@@ -340,8 +375,10 @@ if "quiz_generated" not in st.session_state:
             available.append(3)
         if available:
             add_index2 = random.choice(available)
-            chem = scenario["products"][0] if add_index2 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
-            pert2 = f"Addition of Product: {chem}"
+            if len(scenario["products"]) > 1 and scenario["c"] == scenario["d"]:
+                pert2 = f"Addition of Product: {scenario['products'][0]}"
+            else:
+                pert2 = f"Addition of Product: {scenario['products'][available.index(add_index2)]}"
         else:
             pert2 = "Addition of Product: Unknown"
 

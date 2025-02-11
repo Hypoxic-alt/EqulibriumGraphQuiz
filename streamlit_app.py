@@ -51,31 +51,24 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 
     # --- Apply Perturbation 1 at t = 200 ---
     if "Temperature" in pert1:
-        # Temperature effect: if "Increased" then factor > 1, else < 1.
         factor = 1 + temp_effect if "Increased" in pert1 else 1 - temp_effect
-        # Use ΔH to decide which rate constant is affected:
-        # For exothermic reactions (ΔH < 0), increasing temperature shifts equilibrium toward reactants,
-        # so we modify k2; for endothermic (ΔH > 0), we modify k1.
         if scenario["deltaH"] < 0:
             current_k2 *= factor
         else:
             current_k1 *= factor
         init2 = sol1[-1]
     elif "Volume" in pert1:
-        # For volume changes: Increased Volume lowers concentration, Decreased Volume increases it.
         if "Increased" in pert1:
             init2 = sol1[-1] / (1 + vol_effect)
-        else:  # "Decreased" in pert1
+        else:
             init2 = sol1[-1] * (1 + vol_effect)
     elif "Pressure" in pert1:
-        # For pressure changes: Increased Pressure increases concentration, Decreased Pressure lowers it.
         if "Increased" in pert1:
             init2 = sol1[-1] * (1 + vol_effect)
-        else:  # "Decreased" in pert1
+        else:
             init2 = sol1[-1] / (1 + vol_effect)
     elif "Addition" in pert1:
         init2 = sol1[-1].copy()
-        # Increase the concentration of the chosen species by a factor.
         init2[add_index1] *= (1 + add_effect)
     else:
         init2 = sol1[-1]
@@ -112,30 +105,29 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 
     # --- Plotting ---
     fig, ax = plt.subplots(figsize=(10, 6))
-    # Plot species if their stoichiometric coefficient is nonzero.
+    # Use fixed colors for consistency:
     if a != 0:
-        ax.plot(t1, sol1[:, 0])
-        ax.plot(t2, sol2[:, 0])
-        ax.plot(t3, sol3[:, 0])
+        ax.plot(t1, sol1[:, 0], color='blue')
+        ax.plot(t2, sol2[:, 0], color='blue')
+        ax.plot(t3, sol3[:, 0], color='blue')
     if b != 0:
-        ax.plot(t1, sol1[:, 1])
-        ax.plot(t2, sol2[:, 1])
-        ax.plot(t3, sol3[:, 1])
+        ax.plot(t1, sol1[:, 1], color='red')
+        ax.plot(t2, sol2[:, 1], color='red')
+        ax.plot(t3, sol3[:, 1], color='red')
     if c != 0:
-        ax.plot(t1, sol1[:, 2])
-        ax.plot(t2, sol2[:, 2])
-        ax.plot(t3, sol3[:, 2])
+        ax.plot(t1, sol1[:, 2], color='green')
+        ax.plot(t2, sol2[:, 2], color='green')
+        ax.plot(t3, sol3[:, 2], color='green')
     if d != 0:
-        ax.plot(t1, sol1[:, 3])
-        ax.plot(t2, sol2[:, 3])
-        ax.plot(t3, sol3[:, 3])
+        ax.plot(t1, sol1[:, 3], color='purple')
+        ax.plot(t2, sol2[:, 3], color='purple')
+        ax.plot(t3, sol3[:, 3], color='purple')
         
     # Mark the perturbation times.
     ax.axvline(x=200, color="grey", linestyle="--")
     ax.axvline(x=400, color="grey", linestyle="--")
     ax.set_xlabel("Time")
     ax.set_ylabel("Concentration")
-    # Title now shows ΔH (in kJ/mol) instead of reaction type.
     ax.set_title(f"{scenario['name']}\n{scenario['reaction']}  |  ΔH = {scenario['deltaH']} kJ/mol")
     fig.tight_layout()
     return fig
@@ -144,12 +136,10 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 def generate_options(correct, scenario, vp_rep):
     """
     Build a pool of answer options and return 4 options (including the correct one)
-    as a list in randomized order. The pool is based on:
+    in randomized order. The pool is based on:
       - Temperature: "Increased Temperature", "Decreased Temperature"
-      - Volume/Pressure: depending on vp_rep, either "Increased Volume"/"Decreased Volume"
-        or "Increased Pressure"/"Decreased Pressure"
+      - Volume/Pressure: based on vp_rep (either Volume or Pressure)
       - Addition: for each reactant and product in the scenario.
-    At least one plausible confounder (typically the counterpart in the same category) is ensured.
     """
     temp_opts = ["Increased Temperature", "Decreased Temperature"]
     if vp_rep == "Volume":
@@ -168,8 +158,7 @@ def generate_options(correct, scenario, vp_rep):
     if correct not in pool:
         pool.append(correct)
         
-    # Ensure that if the correct answer is temperature or volume/pressure,
-    # its counterpart is also included.
+    # Ensure that if the correct answer is temperature or volume/pressure, its counterpart is included.
     if "Temperature" in correct:
         other_temp = [opt for opt in temp_opts if opt != correct]
         if other_temp and other_temp[0] not in pool:
@@ -191,12 +180,10 @@ def generate_options(correct, scenario, vp_rep):
             if others:
                 pool.append(others[0])
                 
-    # Now, select 4 unique options ensuring the correct answer is included.
     pool = list(set(pool))
     if correct not in pool:
         pool.append(correct)
     if len(pool) > 4:
-        # Force inclusion of a plausible confounder.
         forced = []
         if "Temperature" in correct:
             forced = [opt for opt in temp_opts if opt != correct]
@@ -210,27 +197,21 @@ def generate_options(correct, scenario, vp_rep):
                 forced = [opt for opt in add_opts if "Reactant" in opt and opt != correct]
             elif "Product" in correct:
                 forced = [opt for opt in add_opts if "Product" in opt and opt != correct]
-        forced = forced[:1]  # only one forced option
+        forced = forced[:1]
         remaining = [opt for opt in pool if opt not in forced and opt != correct]
         count_needed = 4 - 1 - len(forced)
-        if count_needed > 0 and len(remaining) > count_needed:
-            chosen = random.sample(remaining, count_needed)
-        else:
-            chosen = remaining
+        chosen = random.sample(remaining, count_needed) if len(remaining) >= count_needed else remaining
         final_options = [correct] + forced + chosen
     else:
         final_options = pool
 
-    # If fewer than 4 options, pad with random choices from the full list.
     while len(final_options) < 4:
         candidate = random.choice(temp_opts + vp_opts + add_opts)
         if candidate not in final_options:
             final_options.append(candidate)
     final_options = list(set(final_options))
-    # Ensure correct is present.
     if correct not in final_options:
         final_options.append(correct)
-    # Finally, choose exactly 4 options (making sure the correct answer is among them)
     if len(final_options) > 4:
         if correct in final_options:
             final_options.remove(correct)
@@ -242,8 +223,6 @@ def generate_options(correct, scenario, vp_rep):
     return final_options
 
 # --------------------- Reaction Bank ---------------------
-# Each reaction now includes a name, reaction string, stoichiometric coefficients,
-# ΔH (in kJ/mol), and lists of reactants and products.
 reaction_bank = [
     {
         "name": "Haber Process",
@@ -282,14 +261,13 @@ reaction_bank = [
 # --------------------- Main Quiz App ---------------------
 st.title("Reaction Equilibrium Quiz")
 
-# Use session state to track quiz progress.
+# Initialize quiz state if not present.
 if "quiz_started" not in st.session_state:
     st.session_state.quiz_started = False
 
 # --- Start/Restart Quiz ---
 if not st.session_state.quiz_started:
     if st.button("Start Quiz"):
-        # Randomly choose one reaction scenario.
         scenario = random.choice(reaction_bank)
         st.session_state.scenario = scenario
 
@@ -297,23 +275,17 @@ if not st.session_state.quiz_started:
         vp_representation = random.choice(["Volume", "Pressure"])
         st.session_state.vp_representation = vp_representation
 
-        # Build the perturbation pool.
         temp_opts = ["Increased Temperature", "Decreased Temperature"]
-        if vp_representation == "Volume":
-            vp_opts = ["Increased Volume", "Decreased Volume"]
-        else:
-            vp_opts = ["Increased Pressure", "Decreased Pressure"]
+        vp_opts = ["Increased Volume", "Decreased Volume"] if vp_representation == "Volume" else ["Increased Pressure", "Decreased Pressure"]
         add_opts = ["Addition of Reactant", "Addition of Product"]
         perturbation_pool = temp_opts + vp_opts + add_opts
 
-        # Randomly choose two distinct perturbations.
         chosen = random.sample(perturbation_pool, 2)
         pert1 = chosen[0]
         pert2 = chosen[1]
         add_index1 = None
         add_index2 = None
 
-        # For addition options, choose a chemical from the appropriate list.
         if "Addition of Reactant" in pert1:
             available = []
             if scenario["a"] > 0:
@@ -322,7 +294,6 @@ if not st.session_state.quiz_started:
                 available.append(1)
             if available:
                 add_index1 = random.choice(available)
-                # Map index to chemical name using the order in scenario["reactants"]
                 chem = scenario["reactants"][available.index(add_index1)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
                 pert1 = f"Addition of Reactant: {chem}"
             else:
@@ -335,10 +306,7 @@ if not st.session_state.quiz_started:
                 available.append(3)
             if available:
                 add_index1 = random.choice(available)
-                if add_index1 == 2:
-                    chem = scenario["products"][0]
-                else:
-                    chem = scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0]
+                chem = scenario["products"][0] if add_index1 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
                 pert1 = f"Addition of Product: {chem}"
             else:
                 pert1 = "Addition of Product: Unknown"
@@ -363,10 +331,7 @@ if not st.session_state.quiz_started:
                 available.append(3)
             if available:
                 add_index2 = random.choice(available)
-                if add_index2 == 2:
-                    chem = scenario["products"][0]
-                else:
-                    chem = scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0]
+                chem = scenario["products"][0] if add_index2 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
                 pert2 = f"Addition of Product: {chem}"
             else:
                 pert2 = "Addition of Product: Unknown"
@@ -375,12 +340,14 @@ if not st.session_state.quiz_started:
         st.session_state.perturbation2 = pert2
         st.session_state.add_index1 = add_index1
         st.session_state.add_index2 = add_index2
+
+        # Generate answer options only once and store them.
+        st.session_state.opts_q1 = generate_options(pert1, scenario, vp_representation)
+        st.session_state.opts_q2 = generate_options(pert2, scenario, vp_representation)
         st.session_state.quiz_started = True
 
 # --- Quiz Display ---
 if st.session_state.quiz_started:
-    # (Note: The scenario details are not displayed per your request.)
-    # Run the simulation and display the plot.
     fig = simulate_quiz_reaction(
         st.session_state.scenario,
         st.session_state.perturbation1,
@@ -392,9 +359,9 @@ if st.session_state.quiz_started:
 
     st.write("Two perturbations were applied at **t = 200** and **t = 400**. Based on the plot, select the perturbation that occurred at each time:")
 
-    # Build answer options for each question.
-    opts_q1 = generate_options(st.session_state.perturbation1, st.session_state.scenario, st.session_state.vp_representation)
-    opts_q2 = generate_options(st.session_state.perturbation2, st.session_state.scenario, st.session_state.vp_representation)
+    # Use the stored options.
+    opts_q1 = st.session_state.opts_q1
+    opts_q2 = st.session_state.opts_q2
 
     user_answer1 = st.radio("Perturbation at **t = 200**:", opts_q1, key="ans1")
     user_answer2 = st.radio("Perturbation at **t = 400**:", opts_q2, key="ans2")

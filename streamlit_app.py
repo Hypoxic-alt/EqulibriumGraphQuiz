@@ -22,14 +22,14 @@ def generic_reaction(concentrations, t, k1, k2, a, b, c, d):
 def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=None,
                            temp_effect=0.2, vol_effect=0.2, add_effect=0.2):
     """
-    Simulate a reaction in three phases:
+    Simulate the reaction in three phases:
       - Phase 1: t = 0 to 200 (base conditions)
       - Phase 2: t = 200 to 400 (after perturbation 1)
       - Phase 3: t = 400 to 600 (after perturbation 2)
       
-    Depending on the detailed perturbation string, update rate constants (for temperature changes)
-    or modify concentrations (for volume/pressure or addition changes). For addition, the provided
-    add_index indicates which species is affected.
+    Depending on the perturbation, update rate constants (for temperature changes)
+    or modify concentrations (for volume/pressure or addition changes). For addition,
+    the provided add_index indicates which species is affected.
     """
     # Base rate constants
     k1_base = 0.02
@@ -52,6 +52,8 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
     # --- Apply Perturbation 1 at t = 200 ---
     if "Temperature" in pert1:
         factor = 1 + temp_effect if "Increased" in pert1 else 1 - temp_effect
+        # For exothermic (ΔH < 0) increasing temperature shifts equilibrium toward reactants (modify k2)
+        # For endothermic (ΔH > 0) increasing temperature shifts equilibrium toward products (modify k1)
         if scenario["deltaH"] < 0:
             current_k2 *= factor
         else:
@@ -105,23 +107,33 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 
     # --- Plotting ---
     fig, ax = plt.subplots(figsize=(10, 6))
-    # Use fixed colors for consistency:
+    # Draw each species with fixed colors:
     if a != 0:
         ax.plot(t1, sol1[:, 0], color='blue')
         ax.plot(t2, sol2[:, 0], color='blue')
         ax.plot(t3, sol3[:, 0], color='blue')
+        # Connect phase 1 and 2:
+        ax.plot([t1[-1], t1[-1]], [sol1[-1, 0], sol2[0, 0]], color='blue')
+        # Connect phase 2 and 3:
+        ax.plot([t2[-1], t2[-1]], [sol2[-1, 0], sol3[0, 0]], color='blue')
     if b != 0:
         ax.plot(t1, sol1[:, 1], color='red')
         ax.plot(t2, sol2[:, 1], color='red')
         ax.plot(t3, sol3[:, 1], color='red')
+        ax.plot([t1[-1], t1[-1]], [sol1[-1, 1], sol2[0, 1]], color='red')
+        ax.plot([t2[-1], t2[-1]], [sol2[-1, 1], sol3[0, 1]], color='red')
     if c != 0:
         ax.plot(t1, sol1[:, 2], color='green')
         ax.plot(t2, sol2[:, 2], color='green')
         ax.plot(t3, sol3[:, 2], color='green')
+        ax.plot([t1[-1], t1[-1]], [sol1[-1, 2], sol2[0, 2]], color='green')
+        ax.plot([t2[-1], t2[-1]], [sol2[-1, 2], sol3[0, 2]], color='green')
     if d != 0:
         ax.plot(t1, sol1[:, 3], color='purple')
         ax.plot(t2, sol2[:, 3], color='purple')
         ax.plot(t3, sol3[:, 3], color='purple')
+        ax.plot([t1[-1], t1[-1]], [sol1[-1, 3], sol2[0, 3]], color='purple')
+        ax.plot([t2[-1], t2[-1]], [sol2[-1, 3], sol3[0, 3]], color='purple')
         
     # Mark the perturbation times.
     ax.axvline(x=200, color="grey", linestyle="--")
@@ -135,7 +147,7 @@ def simulate_quiz_reaction(scenario, pert1, pert2, add_index1=None, add_index2=N
 # --------------------- Option Generator ---------------------
 def generate_options(correct, scenario, vp_rep):
     """
-    Build a pool of answer options and return 4 options (including the correct one)
+    Build a pool of answer options and return 4 unique options (including the correct one)
     in randomized order. The pool is based on:
       - Temperature: "Increased Temperature", "Decreased Temperature"
       - Volume/Pressure: based on vp_rep (either Volume or Pressure)
@@ -183,6 +195,7 @@ def generate_options(correct, scenario, vp_rep):
     pool = list(set(pool))
     if correct not in pool:
         pool.append(correct)
+    # Choose exactly 4 unique options.
     if len(pool) > 4:
         forced = []
         if "Temperature" in correct:
@@ -197,7 +210,7 @@ def generate_options(correct, scenario, vp_rep):
                 forced = [opt for opt in add_opts if "Reactant" in opt and opt != correct]
             elif "Product" in correct:
                 forced = [opt for opt in add_opts if "Product" in opt and opt != correct]
-        forced = forced[:1]
+        forced = forced[:1]  # include one plausible confounder
         remaining = [opt for opt in pool if opt not in forced and opt != correct]
         count_needed = 4 - 1 - len(forced)
         chosen = random.sample(remaining, count_needed) if len(remaining) >= count_needed else remaining
@@ -261,120 +274,119 @@ reaction_bank = [
 # --------------------- Main Quiz App ---------------------
 st.title("Reaction Equilibrium Quiz")
 
-# Initialize quiz state if not present.
-if "quiz_started" not in st.session_state:
-    st.session_state.quiz_started = False
+# Automatically generate the first question if not already done.
+if "quiz_generated" not in st.session_state:
+    scenario = random.choice(reaction_bank)
+    st.session_state.scenario = scenario
 
-# --- Start/Restart Quiz ---
-if not st.session_state.quiz_started:
-    if st.button("Start Quiz"):
-        scenario = random.choice(reaction_bank)
-        st.session_state.scenario = scenario
+    # Randomly choose a representation for volume/pressure.
+    vp_representation = random.choice(["Volume", "Pressure"])
+    st.session_state.vp_representation = vp_representation
 
-        # Randomly choose a representation for volume/pressure.
-        vp_representation = random.choice(["Volume", "Pressure"])
-        st.session_state.vp_representation = vp_representation
+    temp_opts = ["Increased Temperature", "Decreased Temperature"]
+    vp_opts = ["Increased Volume", "Decreased Volume"] if vp_representation == "Volume" else ["Increased Pressure", "Decreased Pressure"]
+    add_opts = ["Addition of Reactant", "Addition of Product"]
+    perturbation_pool = temp_opts + vp_opts + add_opts
 
-        temp_opts = ["Increased Temperature", "Decreased Temperature"]
-        vp_opts = ["Increased Volume", "Decreased Volume"] if vp_representation == "Volume" else ["Increased Pressure", "Decreased Pressure"]
-        add_opts = ["Addition of Reactant", "Addition of Product"]
-        perturbation_pool = temp_opts + vp_opts + add_opts
+    chosen = random.sample(perturbation_pool, 2)
+    pert1 = chosen[0]
+    pert2 = chosen[1]
+    add_index1 = None
+    add_index2 = None
 
-        chosen = random.sample(perturbation_pool, 2)
-        pert1 = chosen[0]
-        pert2 = chosen[1]
-        add_index1 = None
-        add_index2 = None
+    # For addition options, choose a chemical from the appropriate list.
+    if "Addition of Reactant" in pert1:
+        available = []
+        if scenario["a"] > 0:
+            available.append(0)
+        if scenario["b"] > 0:
+            available.append(1)
+        if available:
+            add_index1 = random.choice(available)
+            chem = scenario["reactants"][available.index(add_index1)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
+            pert1 = f"Addition of Reactant: {chem}"
+        else:
+            pert1 = "Addition of Reactant: Unknown"
+    elif "Addition of Product" in pert1:
+        available = []
+        if scenario["c"] > 0:
+            available.append(2)
+        if scenario["d"] > 0:
+            available.append(3)
+        if available:
+            add_index1 = random.choice(available)
+            chem = scenario["products"][0] if add_index1 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
+            pert1 = f"Addition of Product: {chem}"
+        else:
+            pert1 = "Addition of Product: Unknown"
 
-        if "Addition of Reactant" in pert1:
-            available = []
-            if scenario["a"] > 0:
-                available.append(0)
-            if scenario["b"] > 0:
-                available.append(1)
-            if available:
-                add_index1 = random.choice(available)
-                chem = scenario["reactants"][available.index(add_index1)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
-                pert1 = f"Addition of Reactant: {chem}"
-            else:
-                pert1 = "Addition of Reactant: Unknown"
-        elif "Addition of Product" in pert1:
-            available = []
-            if scenario["c"] > 0:
-                available.append(2)
-            if scenario["d"] > 0:
-                available.append(3)
-            if available:
-                add_index1 = random.choice(available)
-                chem = scenario["products"][0] if add_index1 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
-                pert1 = f"Addition of Product: {chem}"
-            else:
-                pert1 = "Addition of Product: Unknown"
+    if "Addition of Reactant" in pert2:
+        available = []
+        if scenario["a"] > 0:
+            available.append(0)
+        if scenario["b"] > 0:
+            available.append(1)
+        if available:
+            add_index2 = random.choice(available)
+            chem = scenario["reactants"][available.index(add_index2)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
+            pert2 = f"Addition of Reactant: {chem}"
+        else:
+            pert2 = "Addition of Reactant: Unknown"
+    elif "Addition of Product" in pert2:
+        available = []
+        if scenario["c"] > 0:
+            available.append(2)
+        if scenario["d"] > 0:
+            available.append(3)
+        if available:
+            add_index2 = random.choice(available)
+            chem = scenario["products"][0] if add_index2 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
+            pert2 = f"Addition of Product: {chem}"
+        else:
+            pert2 = "Addition of Product: Unknown"
 
-        if "Addition of Reactant" in pert2:
-            available = []
-            if scenario["a"] > 0:
-                available.append(0)
-            if scenario["b"] > 0:
-                available.append(1)
-            if available:
-                add_index2 = random.choice(available)
-                chem = scenario["reactants"][available.index(add_index2)] if len(scenario["reactants"]) > 1 else scenario["reactants"][0]
-                pert2 = f"Addition of Reactant: {chem}"
-            else:
-                pert2 = "Addition of Reactant: Unknown"
-        elif "Addition of Product" in pert2:
-            available = []
-            if scenario["c"] > 0:
-                available.append(2)
-            if scenario["d"] > 0:
-                available.append(3)
-            if available:
-                add_index2 = random.choice(available)
-                chem = scenario["products"][0] if add_index2 == 2 else (scenario["products"][1] if len(scenario["products"]) > 1 else scenario["products"][0])
-                pert2 = f"Addition of Product: {chem}"
-            else:
-                pert2 = "Addition of Product: Unknown"
+    st.session_state.perturbation1 = pert1
+    st.session_state.perturbation2 = pert2
+    st.session_state.add_index1 = add_index1
+    st.session_state.add_index2 = add_index2
 
-        st.session_state.perturbation1 = pert1
-        st.session_state.perturbation2 = pert2
-        st.session_state.add_index1 = add_index1
-        st.session_state.add_index2 = add_index2
-
-        # Generate answer options only once and store them.
-        st.session_state.opts_q1 = generate_options(pert1, scenario, vp_representation)
-        st.session_state.opts_q2 = generate_options(pert2, scenario, vp_representation)
-        st.session_state.quiz_started = True
+    # Generate and store the answer options.
+    st.session_state.opts_q1 = generate_options(pert1, scenario, vp_representation)
+    st.session_state.opts_q2 = generate_options(pert2, scenario, vp_representation)
+    st.session_state.submitted = False
+    st.session_state.quiz_generated = True
 
 # --- Quiz Display ---
-if st.session_state.quiz_started:
-    fig = simulate_quiz_reaction(
-        st.session_state.scenario,
-        st.session_state.perturbation1,
-        st.session_state.perturbation2,
-        add_index1=st.session_state.add_index1,
-        add_index2=st.session_state.add_index2
-    )
-    st.pyplot(fig)
+fig = simulate_quiz_reaction(
+    st.session_state.scenario,
+    st.session_state.perturbation1,
+    st.session_state.perturbation2,
+    add_index1=st.session_state.add_index1,
+    add_index2=st.session_state.add_index2
+)
+st.pyplot(fig)
 
-    st.write("Two perturbations were applied at **t = 200** and **t = 400**. Based on the plot, select the perturbation that occurred at each time:")
+st.write("Two perturbations were applied at **t = 200** and **t = 400**. Based on the plot, select the perturbation that occurred at each time:")
 
-    # Use the stored options.
-    opts_q1 = st.session_state.opts_q1
-    opts_q2 = st.session_state.opts_q2
+opts_q1 = st.session_state.opts_q1
+opts_q2 = st.session_state.opts_q2
 
-    user_answer1 = st.radio("Perturbation at **t = 200**:", opts_q1, key="ans1")
-    user_answer2 = st.radio("Perturbation at **t = 400**:", opts_q2, key="ans2")
+user_answer1 = st.radio("Perturbation at **t = 200**:", opts_q1, key="ans1")
+user_answer2 = st.radio("Perturbation at **t = 400**:", opts_q2, key="ans2")
 
-    if st.button("Submit Answers"):
-        correct1 = st.session_state.perturbation1
-        correct2 = st.session_state.perturbation2
-        if user_answer1 == correct1 and user_answer2 == correct2:
-            st.success("Correct! Well done.")
-        else:
-            st.error(f"Incorrect.\n\n**Correct Answers:**\n- t = 200: {correct1}\n- t = 400: {correct2}")
+if st.button("Submit Answers"):
+    correct1 = st.session_state.perturbation1
+    correct2 = st.session_state.perturbation2
+    st.session_state.submitted = True
+    if user_answer1 == correct1 and user_answer2 == correct2:
+        st.success("Correct! Well done.")
+    else:
+        st.error(f"Incorrect.\n\n**Correct Answers:**\n- t = 200: {correct1}\n- t = 400: {correct2}")
 
-    if st.button("Reset Quiz"):
+# Show the Next Question button after answers have been submitted.
+if st.session_state.get("submitted", False):
+    if st.button("Next Question"):
+        # Clear all session state variables to generate a new question.
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
